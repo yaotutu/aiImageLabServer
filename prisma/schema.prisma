@@ -1,0 +1,257 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 用户相关模型 ====================
+
+// 注意：SQLite不支持enum，使用String代替，在应用层通过TypeScript enum保证类型安全
+// LoginType: "WECHAT" | "EMAIL" | "PHONE"
+
+// 用户表
+model User {
+  id            String    @id @default(cuid())
+  nickname      String
+  avatarUrl     String?
+
+  // 邮箱登录相关
+  email         String?   @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String?
+
+  // 手机号登录相关
+  phone         String?   @unique
+  phoneVerified Boolean   @default(false)
+
+  // 微信相关字段
+  wechatOpenId  String?   @unique
+  wechatUnionId String?
+  wechatInfo    String?   // JSON string
+
+  // 系统字段
+  credits       Int       @default(3)  // 默认赠送3积分
+  isActive      Boolean   @default(true)
+  loginType     String    // WECHAT | EMAIL | PHONE
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // 关联关系
+  generations   Generation[]
+  orders        Order[]
+  creditLogs    CreditLog[]
+
+  @@map("users")
+}
+
+// ==================== 管理员相关模型 ====================
+
+// AdminRole: "SUPER_ADMIN" | "TEMPLATE_ADMIN" | "USER_ADMIN" | "VIEWER"
+
+// 管理员表
+model Admin {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  realName     String
+  role         String    @default("VIEWER") // SUPER_ADMIN | TEMPLATE_ADMIN | USER_ADMIN | VIEWER
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // 关联关系 - 创建的模版
+  createdTemplates Template[] @relation("TemplateCreator")
+
+  @@map("admins")
+}
+
+// ==================== 模版相关模型 ====================
+
+// 模版表
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String   // template_square | id_photo | portrait
+  tags        String?  // JSON array string
+  thumbnailUrl String?
+  previewUrls String?  // JSON array string
+
+  // AI配置
+  aiProvider  String   // mock | midjourney | stable_diffusion
+  aiParams    String?  // JSON string
+  prompt      String?  // 提示词
+
+  // 业务配置
+  creditsRequired Int     @default(1)
+  isActive        Boolean @default(true)
+  isPremium       Boolean @default(false)
+  sortOrder       Int     @default(0)
+
+  // 统计字段
+  usageCount      Int     @default(0)
+  likeCount       Int     @default(0)
+
+  // 审计字段
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // 关联关系
+  creator         Admin?  @relation("TemplateCreator", fields: [createdBy], references: [id])
+  generations     Generation[]
+
+  @@map("templates")
+}
+
+// ==================== 证件照和形象照配置 ====================
+
+// 证件照规格表
+model IdPhotoSpec {
+  id          String   @id @default(cuid())
+  name        String   @unique  // "1寸", "2寸", "小2寸"
+  width       Int      // 宽度像素
+  height      Int      // 高度像素
+  dpi         Int      @default(300)
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("id_photo_specs")
+}
+
+// 形象照风格表
+model PortraitStyle {
+  id              String   @id @default(cuid())
+  categoryId      String   // professional | creative | casual
+  categoryName    String   // "职业形象", "创意形象"
+  name            String   // "商务正装", "商务休闲"
+  description     String?
+  previewUrl      String?
+  sampleImages    String?  // JSON array string
+  aiParams        String?  // JSON string
+  creditsRequired Int      @default(2)
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("portrait_styles")
+}
+
+// ==================== 生成记录相关 ====================
+
+// GenerationType: "TEMPLATE" | "ID_PHOTO" | "PORTRAIT"
+// GenerationStatus: "PENDING" | "PROCESSING" | "SUCCESS" | "FAILED"
+
+// 生成记录表
+model Generation {
+  id               String   @id @default(cuid())
+  userId           String
+  templateId       String?
+  generationType   String   // TEMPLATE | ID_PHOTO | PORTRAIT
+
+  // 图片相关
+  originalImageUrl String?  // 用户上传的原图
+  resultImageUrl   String?  // 生成结果图
+  thumbnailUrl     String?  // 缩略图
+
+  // 生成参数
+  aiProvider       String
+  aiParams         String?  // JSON string
+  generationTime   Int?     // 生成耗时(ms)
+
+  // 状态和结果
+  status           String   @default("PENDING") // PENDING | PROCESSING | SUCCESS | FAILED
+  errorMessage     String?
+  creditsUsed      Int      @default(1)
+
+  // 用户自定义
+  title            String?
+  isPublic         Boolean  @default(false)
+  likeCount        Int      @default(0)
+
+  createdAt        DateTime @default(now())
+
+  // 关联关系
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template         Template? @relation(fields: [templateId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([generationType])
+  @@map("generations")
+}
+
+// ==================== 支付相关模型 ====================
+
+// PaymentMethod: "WECHAT" | "ALIPAY" | "AD_REWARD"
+// OrderStatus: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED"
+
+// 订单表
+model Order {
+  id                String   @id @default(cuid())
+  userId            String
+  orderNo           String   @unique
+  amount            Float    // 金额（元）
+  credits           Int      // 购买的积分
+  paymentMethod     String   // WECHAT | ALIPAY | AD_REWARD
+
+  // 状态和支付信息
+  status            String   @default("PENDING") // PENDING | PAID | CANCELLED | REFUNDED
+  thirdPartyOrderId String?  // 第三方订单号
+  paymentInfo       String?  // JSON string 支付回调信息
+  paidAt            DateTime?
+
+  createdAt         DateTime @default(now())
+
+  // 关联关系
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([orderNo])
+  @@index([status])
+  @@map("orders")
+}
+
+// 积分变动日志表
+model CreditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  amount      Int      // 变动数量（正数表示增加，负数表示减少）
+  balance     Int      // 变动后余额
+  type        String   // purchase | ad_reward | generation | admin_adjust
+  relatedId   String?  // 关联ID（订单ID、生成ID等）
+  description String?
+  createdAt   DateTime @default(now())
+
+  // 关联关系
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@map("credit_logs")
+}
+
+// ==================== 系统配置相关 ====================
+
+// 系统配置表
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   // JSON string
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_configs")
+}
