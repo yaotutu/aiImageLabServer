@@ -47,6 +47,7 @@ model User {
   generations   Generation[]
   orders        Order[]
   creditLogs    CreditLog[]
+  templateUsages TemplateUsage[]
 
   @@map("users")
 }
@@ -80,13 +81,13 @@ model Template {
   id          String   @id @default(cuid())
   name        String
   description String?
-  category    String   // template_square | id_photo | portrait
+  category    String   // template_square | template_character | template_landscape | template_artistic | id_photo | portrait_biz | portrait_creative | portrait_casual
   tags        String?  // JSON array string
   thumbnailUrl String?
   previewUrls String?  // JSON array string
 
   // AI配置
-  aiProvider  String   // mock | midjourney | stable_diffusion
+  aiProvider  String   // mock | midjourney | stable_diffusion | dalle
   aiParams    String?  // JSON string
   prompt      String?  // 提示词
 
@@ -99,6 +100,9 @@ model Template {
   // 统计字段
   usageCount      Int     @default(0)
   likeCount       Int     @default(0)
+  weeklyUsage     Int     @default(0)    // 周使用次数
+  monthlyUsage    Int     @default(0)    // 月使用次数
+  hotScore        Float   @default(0)    // 热度分数（考虑时间衰减）
 
   // 审计字段
   createdBy       String?
@@ -108,8 +112,33 @@ model Template {
   // 关联关系
   creator         Admin?  @relation("TemplateCreator", fields: [createdBy], references: [id])
   generations     Generation[]
+  templateUsages  TemplateUsage[]
 
+  @@index([category])
+  @@index([isActive])
+  @@index([hotScore])
+  @@index([usageCount])
+  @@index([weeklyUsage])
+  @@index([monthlyUsage])
   @@map("templates")
+}
+
+// 模版使用记录表
+model TemplateUsage {
+  id         String   @id @default(cuid())
+  templateId String
+  userId     String
+  usedAt     DateTime @default(now())
+
+  // 关联关系
+  template   Template @relation(fields: [templateId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([templateId])
+  @@index([userId])
+  @@index([usedAt])
+  @@unique([templateId, userId, usedAt]) // 防止同一用户重复记录
+  @@map("template_usages")
 }
 
 // ==================== 证件照和形象照配置 ====================
@@ -168,20 +197,22 @@ model Generation {
 
   // 生成参数
   aiProvider       String
-  aiParams         String?  // JSON string
-  generationTime   Int?     // 生成耗时(ms)
+  aiParams         String?   // JSON string
+  aiRequestId      String?   // AI服务返回的请求ID
+  generationTime   Int?      // 生成耗时(ms)
 
   // 状态和结果
-  status           String   @default("PENDING") // PENDING | PROCESSING | SUCCESS | FAILED
+  status           String    @default("PENDING") // PENDING | PROCESSING | SUCCESS | FAILED
   errorMessage     String?
-  creditsUsed      Int      @default(1)
+  creditsUsed      Int       @default(1)
 
   // 用户自定义
   title            String?
-  isPublic         Boolean  @default(false)
-  likeCount        Int      @default(0)
+  isPublic         Boolean   @default(false)
+  likeCount        Int       @default(0)
 
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime? // 完成时间
 
   // 关联关系
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)

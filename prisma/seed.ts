@@ -118,65 +118,230 @@ async function main() {
   // 4. 创建示例模版
   console.log('📋 创建示例模版...');
   const templates = [
+    // 模版广场类
     {
-      name: '证件照-蓝底',
-      description: '标准蓝底证件照',
-      category: 'id_photo',
-      tags: JSON.stringify(['证件照', '蓝底', '正式']),
+      name: '梦幻风景画',
+      description: 'AI生成的梦幻风格风景画',
+      category: 'template_landscape',
+      tags: JSON.stringify(['风景', '梦幻', '艺术']),
       aiProvider: 'mock',
-      aiParams: JSON.stringify({ background: 'blue', style: 'formal' }),
-      creditsRequired: 1,
+      aiParams: JSON.stringify({ style: 'dreamy', type: 'landscape', quality: 'high' }),
+      prompt: 'Beautiful dreamy landscape with soft colors, ethereal lighting, fantasy elements',
+      creditsRequired: 2,
       isActive: true,
       sortOrder: 1,
       createdBy: admin.id
     },
     {
-      name: '证件照-白底',
-      description: '标准白底证件照',
-      category: 'id_photo',
-      tags: JSON.stringify(['证件照', '白底', '正式']),
+      name: '动漫角色设计',
+      description: '可爱的动漫风格角色设计',
+      category: 'template_character',
+      tags: JSON.stringify(['动漫', '角色', '可爱']),
       aiProvider: 'mock',
-      aiParams: JSON.stringify({ background: 'white', style: 'formal' }),
-      creditsRequired: 1,
+      aiParams: JSON.stringify({ style: 'anime', type: 'character', quality: 'high' }),
+      prompt: 'Cute anime character with big eyes, colorful hair, fantasy outfit',
+      creditsRequired: 3,
       isActive: true,
+      isPremium: true,
       sortOrder: 2,
       createdBy: admin.id
     },
     {
-      name: '证件照-红底',
-      description: '标准红底证件照',
-      category: 'id_photo',
-      tags: JSON.stringify(['证件照', '红底', '正式']),
+      name: '油画风格肖像',
+      description: '古典油画风格的艺术肖像',
+      category: 'template_artistic',
+      tags: JSON.stringify(['油画', '肖像', '古典']),
       aiProvider: 'mock',
-      aiParams: JSON.stringify({ background: 'red', style: 'formal' }),
-      creditsRequired: 1,
+      aiParams: JSON.stringify({ style: 'oil_painting', type: 'portrait', quality: 'high' }),
+      prompt: 'Classical oil painting portrait, Renaissance style, dramatic lighting',
+      creditsRequired: 4,
       isActive: true,
+      isPremium: true,
       sortOrder: 3,
       createdBy: admin.id
     },
     {
-      name: '商务形象照',
-      description: '专业商务形象照',
-      category: 'portrait',
-      tags: JSON.stringify(['形象照', '商务', '职业']),
+      name: '科幻场景',
+      description: '未来科技感的科幻场景',
+      category: 'template_landscape',
+      tags: JSON.stringify(['科幻', '未来', '场景']),
       aiProvider: 'mock',
-      aiParams: JSON.stringify({ style: 'business', quality: 'high' }),
-      creditsRequired: 2,
+      aiParams: JSON.stringify({ style: 'sci_fi', type: 'scene', quality: 'high' }),
+      prompt: 'Futuristic sci-fi scene with advanced technology, neon lights, cyberpunk elements',
+      creditsRequired: 3,
       isActive: true,
       sortOrder: 4,
       createdBy: admin.id
     },
+
+    // 证件照类
     {
-      name: '创意海报',
-      description: '个性创意海报',
-      category: 'template_square',
-      tags: JSON.stringify(['创意', '海报', '个性']),
+      name: '证件照-蓝底',
+      description: '标准蓝底证件照，智能抠图换背景',
+      category: 'id_photo',
+      tags: JSON.stringify(['证件照', '蓝底', '正式', '推荐']),
       aiProvider: 'mock',
-      aiParams: JSON.stringify({ style: 'creative', type: 'poster' }),
+      aiParams: JSON.stringify({
+        background: 'blue',
+        style: 'formal',
+        faceDetection: true,
+        headSizeRatio: 0.7
+      }),
+      prompt: 'Professional ID photo with blue background, formal attire',
+      creditsRequired: 1,
+      isActive: true,
+      sortOrder: 5,
+      createdBy: admin.id
+    },
+    {
+      name: '证件照-白底',
+      description: '标准白底证件照，智能抠图换背景',
+      category: 'id_photo',
+      tags: JSON.stringify(['证件照', '白底', '正式']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        background: 'white',
+        style: 'formal',
+        faceDetection: true,
+        headSizeRatio: 0.7
+      }),
+      prompt: 'Professional ID photo with white background, formal attire',
+      creditsRequired: 1,
+      isActive: true,
+      sortOrder: 6,
+      createdBy: admin.id
+    },
+    {
+      name: '证件照-红底',
+      description: '标准红底证件照，智能抠图换背景',
+      category: 'id_photo',
+      tags: JSON.stringify(['证件照', '红底', '正式']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        background: 'red',
+        style: 'formal',
+        faceDetection: true,
+        headSizeRatio: 0.7
+      }),
+      prompt: 'Professional ID photo with red background, formal attire',
+      creditsRequired: 1,
+      isActive: true,
+      sortOrder: 7,
+      createdBy: admin.id
+    },
+
+    // 商务形象照类
+    {
+      name: '商务正装形象',
+      description: '专业商务正装形象照，适合LinkedIn、简历使用',
+      category: 'portrait_biz',
+      tags: JSON.stringify(['商务', '正装', '职业', '热门']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'business_formal',
+        quality: 'high',
+        preserveFace: true,
+        styleStrength: 0.8
+      }),
+      prompt: 'Professional business portrait in formal suit, professional lighting',
+      creditsRequired: 2,
+      isActive: true,
+      sortOrder: 8,
+      createdBy: admin.id
+    },
+    {
+      name: '商务休闲形象',
+      description: '商务休闲风格形象照，既专业又亲和',
+      category: 'portrait_biz',
+      tags: JSON.stringify(['商务', '休闲', '职业']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'business_casual',
+        quality: 'high',
+        preserveFace: true,
+        styleStrength: 0.7
+      }),
+      prompt: 'Professional business casual portrait, approachable style',
+      creditsRequired: 2,
+      isActive: true,
+      sortOrder: 9,
+      createdBy: admin.id
+    },
+
+    // 创意形象照类
+    {
+      name: '艺术油画形象',
+      description: '古典油画风格的创意形象照',
+      category: 'portrait_creative',
+      tags: JSON.stringify(['艺术', '油画', '创意']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'oil_painting',
+        quality: 'high',
+        preserveFace: false,
+        styleStrength: 0.9
+      }),
+      prompt: 'Artistic oil painting style portrait, Renaissance influence, dramatic lighting',
       creditsRequired: 3,
       isActive: true,
       isPremium: true,
-      sortOrder: 5,
+      sortOrder: 10,
+      createdBy: admin.id
+    },
+    {
+      name: '动漫卡通形象',
+      description: '动漫卡通风格的创意形象照',
+      category: 'portrait_creative',
+      tags: JSON.stringify(['动漫', '卡通', '创意', '热门']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'anime',
+        quality: 'high',
+        preserveFace: false,
+        styleStrength: 0.9
+      }),
+      prompt: 'Anime cartoon style portrait, cute and colorful, big expressive eyes',
+      creditsRequired: 3,
+      isActive: true,
+      sortOrder: 11,
+      createdBy: admin.id
+    },
+
+    // 休闲形象照类
+    {
+      name: '清新自然形象',
+      description: '清新自然风格的休闲形象照',
+      category: 'portrait_casual',
+      tags: JSON.stringify(['清新', '自然', '休闲', '推荐']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'fresh_natural',
+        quality: 'high',
+        preserveFace: true,
+        styleStrength: 0.6
+      }),
+      prompt: 'Fresh and natural casual portrait, outdoor lighting, friendly expression',
+      creditsRequired: 2,
+      isActive: true,
+      sortOrder: 12,
+      createdBy: admin.id
+    },
+    {
+      name: '街头潮流形象',
+      description: '街头潮流风格的个性形象照',
+      category: 'portrait_casual',
+      tags: JSON.stringify(['街头', '潮流', '个性']),
+      aiProvider: 'mock',
+      aiParams: JSON.stringify({
+        style: 'street_style',
+        quality: 'high',
+        preserveFace: false,
+        styleStrength: 0.8
+      }),
+      prompt: 'Street style fashion portrait, trendy urban background, confident attitude',
+      creditsRequired: 2,
+      isActive: true,
+      sortOrder: 13,
       createdBy: admin.id
     }
   ];
