@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  Inject,
 } from "@nestjs/common";
 import { Observable } from "rxjs";
 import { tap } from "rxjs/operators";
@@ -15,8 +16,13 @@ import { AppLoggerService } from "../logger/logger.service";
  */
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
+  constructor(
+    @Inject(AppLoggerService) private logger: AppLoggerService,
+  ) {
+    this.logger.setContext("HTTP");
+  }
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const logger = new AppLoggerService().setContext("HTTP");
     const request = context.switchToHttp().getRequest<Request>();
     const { method, url, ip } = request;
     const userAgent = request.get("user-agent") || "";
@@ -29,14 +35,13 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const duration = Date.now() - startTime;
-          logger.logRequest(method, url, userId, duration);
+          this.logger.logRequest(method, url, userId, duration);
         },
         error: (error) => {
           const duration = Date.now() - startTime;
-          logger.error(
+          this.logger.error(
             `${method} ${url} - Error: ${error.message} (${duration}ms)`,
             error.stack,
-            "HTTP",
           );
         },
       }),

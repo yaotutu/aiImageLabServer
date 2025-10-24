@@ -7,9 +7,15 @@ import { apiReference } from "@scalar/express-api-reference";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { LoggingInterceptor } from "./common/interceptors/logging.interceptor";
+import { AppLoggerService } from "./common/logger/logger.service";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
+
+  // 使用自定义 Logger
+  app.useLogger(app.get(AppLoggerService));
 
   // 获取配置服务
   const configService = app.get(ConfigService);
@@ -34,11 +40,11 @@ async function bootstrap() {
   );
 
   // 全局异常过滤器
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(app.get(HttpExceptionFilter));
 
   // 全局拦截器
   app.useGlobalInterceptors(
-    new LoggingInterceptor(),
+    app.get(LoggingInterceptor),
     new TransformInterceptor(),
   );
 
@@ -103,14 +109,13 @@ async function bootstrap() {
   // 启动服务
   await app.listen(port);
 
-  console.log(`
-    🚀 服务器已启动
-    📡 运行环境: ${nodeEnv}
-    🌐 端口: ${port}
-    🔗 URL: http://localhost:${port}
-    📚 API 文档: http://localhost:${port}/api-docs
-    ⏰ 启动时间: ${new Date().toLocaleString()}
-  `);
+  const logger = app.get(AppLoggerService);
+  logger.log(`服务器已启动`, "Bootstrap");
+  logger.log(`运行环境: ${nodeEnv}`, "Bootstrap");
+  logger.log(`端口: ${port}`, "Bootstrap");
+  logger.log(`URL: http://localhost:${port}`, "Bootstrap");
+  logger.log(`API 文档: http://localhost:${port}/api-docs`, "Bootstrap");
+  logger.log(`启动时间: ${new Date().toLocaleString()}`, "Bootstrap");
 }
 
 bootstrap();

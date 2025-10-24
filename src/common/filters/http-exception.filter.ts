@@ -4,6 +4,7 @@ import {
   ArgumentsHost,
   HttpException,
   HttpStatus,
+  Inject,
 } from "@nestjs/common";
 import { Request, Response } from "express";
 import { AppLoggerService } from "../logger/logger.service";
@@ -16,8 +17,13 @@ import { BusinessException } from "../exceptions/business.exception";
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  constructor(
+    @Inject(AppLoggerService) private logger: AppLoggerService,
+  ) {
+    this.logger.setContext("HttpExceptionFilter");
+  }
+
   catch(exception: unknown, host: ArgumentsHost) {
-    const logger = new AppLoggerService().setContext("HttpExceptionFilter");
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
@@ -58,10 +64,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error = exception.name;
 
       // 记录详细的错误堆栈
-      logger.error(
+      this.logger.error(
         `Internal error: ${exception.message}`,
         exception.stack,
-        "HttpExceptionFilter",
       );
     } else {
       // 未知错误
@@ -69,10 +74,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       code = ResponseCode.UNKNOWN_ERROR;
       message = ResponseMessage[code];
 
-      logger.error(
+      this.logger.error(
         `Unknown error: ${JSON.stringify(exception)}`,
         undefined,
-        "HttpExceptionFilter",
       );
     }
 
@@ -87,15 +91,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // 记录错误日志（业务异常不记录为 error 级别）
     if (!(exception instanceof BusinessException)) {
-      logger.error(
+      this.logger.error(
         `${request.method} ${request.url} - ${message}`,
         exception instanceof Error ? exception.stack : undefined,
-        "HttpExceptionFilter",
       );
     } else {
-      logger.warn(
+      this.logger.warn(
         `${request.method} ${request.url} - ${message}`,
-        "HttpExceptionFilter",
       );
     }
 

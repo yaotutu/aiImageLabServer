@@ -1,88 +1,66 @@
-import {
-  Injectable,
-  LoggerService as NestLoggerService,
-  Scope,
-} from "@nestjs/common";
-import * as winston from "winston";
-import DailyRotateFile from "winston-daily-rotate-file";
-import * as fs from "fs";
+import { Injectable, LoggerService as NestLoggerService } from "@nestjs/common";
+import pino from "pino";
+import { ConfigService } from "@nestjs/config";
 
-@Injectable({ scope: Scope.TRANSIENT })
+@Injectable()
 export class AppLoggerService implements NestLoggerService {
-  private logger: winston.Logger;
+  private logger: pino.Logger;
   private context?: string;
 
-  constructor() {
-    // 确保日志目录存在
-    const logDir = process.env.LOG_DIR || "logs";
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
+  constructor(private configService: ConfigService) {
+    const nodeEnv = this.configService.get<string>("NODE_ENV", "development");
+    const logLevel = this.configService.get<string>("LOG_LEVEL", "info");
 
-    const logFormat = winston.format.combine(
-      winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-      winston.format.errors({ stack: true }),
-      winston.format.printf(
-        ({ timestamp, level, message, context, trace, ...meta }) => {
-          const contextStr = context ? `[${context}]` : "";
-          const metaStr = Object.keys(meta).length ? JSON.stringify(meta) : "";
-          const traceStr = trace ? `\n${trace}` : "";
-          return `${timestamp} [${level.toUpperCase()}] ${contextStr} ${message} ${metaStr}${traceStr}`;
+    // pino 配置
+    const pinoConfig: pino.LoggerOptions = {
+      level: logLevel,
+      formatters: {
+        level: (label) => ({ level: label.toUpperCase() }),
+        log: (object) => {
+          // 添加时间戳和上下文格式化
+          if (object.msg && object.context) {
+            object.msg = `[${object.context}] ${object.msg}`;
+            delete object.context;
+          }
+          return object;
         },
-      ),
-    );
+      },
+      timestamp: pino.stdTimeFunctions.isoTime,
+    };
 
-    const colorFormat = winston.format.combine(
-      winston.format.colorize({ all: true }),
-      logFormat,
-    );
+    // 开发环境使用更友好的格式
+    if (nodeEnv === "development") {
+      const prettyTransport = pino.transport({
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "yyyy-mm-dd HH:MM:ss",
+          messageFormat: "{context} {msg}",
+        },
+      });
+      this.logger = pino(pinoConfig, prettyTransport);
+    } else {
+      // 生产环境可能需要文件日志
+      const enableFileLogging = this.configService.get<boolean>("ENABLE_FILE_LOGGING", false);
 
-    // 是否启用文件日志（默认开发环境不启用，生产环境启用）
-    const enableFileLogging =
-      process.env.ENABLE_FILE_LOGGING === "true" ||
-      process.env.NODE_ENV === "production";
-
-    const transports: winston.transport[] = [
-      new winston.transports.Console({
-        format: colorFormat,
-      }),
-    ];
-
-    // 如果启用文件日志，添加文件传输
-    if (enableFileLogging) {
-      // 所有日志
-      transports.push(
-        new DailyRotateFile({
-          dirname: logDir,
-          filename: "application-%DATE%.log",
-          datePattern: "YYYY-MM-DD",
-          zippedArchive: true,
-          maxSize: "20m",
-          maxFiles: "14d",
-          format: logFormat,
-        }),
-      );
-
-      // 错误日志单独存储
-      transports.push(
-        new DailyRotateFile({
-          dirname: logDir,
-          filename: "error-%DATE%.log",
-          datePattern: "YYYY-MM-DD",
-          zippedArchive: true,
-          maxSize: "20m",
-          maxFiles: "30d",
-          level: "error",
-          format: logFormat,
-        }),
-      );
+      if (enableFileLogging) {
+        const logDir = this.configService.get<string>("LOG_DIR", "logs");
+        const fileTransport = pino.transport({
+          target: "pino-roll",
+          options: {
+            file: `${logDir}/application.log`,
+            frequency: "daily",
+            limit: {
+              size: "100m",
+              count: 14,
+            },
+          },
+        });
+        this.logger = pino(pinoConfig, fileTransport);
+      } else {
+        this.logger = pino(pinoConfig);
+      }
     }
-
-    this.logger = winston.createLogger({
-      level: process.env.LOG_LEVEL || "info",
-      format: logFormat,
-      transports,
-    });
   }
 
   setContext(context: string) {
@@ -90,45 +68,70 @@ export class AppLoggerService implements NestLoggerService {
     return this;
   }
 
-  log(message: string, context?: string) {
-    this.logger.info(message, { context: context || this.context });
+  log(message: any, context?: string) {
+    this.logger.info({
+      context: context || this.context,
+      msg: message
+    });
   }
 
-  error(message: string, trace?: string, context?: string) {
-    this.logger.error(message, { context: context || this.context, trace });
+  error(message: any, trace?: string, context?: string) {
+    this.logger.error({
+      context: context || this.context,
+      msg: message,
+      ...(trace && { error: trace })
+    });
   }
 
-  warn(message: string, context?: string) {
-    this.logger.warn(message, { context: context || this.context });
+  warn(message: any, context?: string) {
+    this.logger.warn({
+      context: context || this.context,
+      msg: message
+    });
   }
 
-  debug(message: string, context?: string) {
-    this.logger.debug(message, { context: context || this.context });
+  debug(message: any, context?: string) {
+    this.logger.debug({
+      context: context || this.context,
+      msg: message
+    });
   }
 
-  verbose(message: string, context?: string) {
-    this.logger.verbose(message, { context: context || this.context });
+  verbose(message: any, context?: string) {
+    this.logger.debug({
+      context: context || this.context,
+      msg: message
+    });
   }
 
   /**
    * 记录 HTTP 请求日志
    */
   logRequest(method: string, url: string, userId?: string, duration?: number) {
-    const message = `${method} ${url}`;
-    const meta: any = {};
-    if (userId) meta.userId = userId;
-    if (duration !== undefined) meta.duration = `${duration}ms`;
+    const requestData: any = {
+      context: "HTTP",
+      msg: `${method} ${url}`,
+    };
 
-    this.logger.info(message, { context: "HTTP", ...meta });
+    if (userId) requestData.userId = userId;
+    if (duration !== undefined) requestData.duration = duration;
+
+    this.logger.info(requestData);
   }
 
   /**
    * 记录业务日志
    */
   logBusiness(action: string, data?: any, context?: string) {
-    this.logger.info(action, {
+    const businessData: any = {
       context: context || this.context || "Business",
-      ...data,
-    });
+      msg: action,
+    };
+
+    if (data) {
+      Object.assign(businessData, data);
+    }
+
+    this.logger.info(businessData);
   }
 }
