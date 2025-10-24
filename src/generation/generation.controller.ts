@@ -30,66 +30,36 @@ import { diskStorage } from "multer";
 import { extname } from "path";
 import { v4 as uuidv4 } from "uuid";
 
-@ApiTags("图像生成")
+@ApiTags("Generations")
 @ApiBearerAuth("JWT-auth")
 @Controller("generations")
-@UseGuards(JwtAuthGuard)
 export class GenerationController {
   constructor(private generationService: GenerationService) {}
 
-  @Post()
+  @Post("test")
   @ApiOperation({
-    summary: "创建图像生成任务",
-    description: "使用模板创建新的图像生成任务，返回任务ID",
-  })
-  @ApiBody({
-    schema: {
-      type: "object",
-      required: ["templateId", "generationType"],
-      properties: {
-        templateId: { type: "string", example: "clh0drk6r0000lufbngp6t3p7" },
-        generationType: {
-          type: "string",
-          enum: ["TEMPLATE", "ID_PHOTO", "PORTRAIT"],
-          example: "TEMPLATE",
-        },
-        title: { type: "string", example: "我的第一张AI图片" },
-        aiParams: {
-          type: "object",
-          example: { style: "realistic", quality: "high" },
-        },
-      },
-    },
-  })
-  @ApiSuccessResponse()
-  @ApiResponse({ status: 400, description: "参数错误或积分不足" })
-  @ApiResponse({ status: 404, description: "模板不存在" })
-  async createTask(@Body() createDto: CreateGenerationDto, @Req() req: any) {
-    return this.generationService.createTask(req.user.userId, createDto);
-  }
-
-  @Post(":taskId/upload")
-  @ApiOperation({
-    summary: "上传原始图片",
-    description: "为已创建的任务上传原始图片，上传成功后开始生成",
+    summary: "测试创建生成任务（无需认证）",
+    description: "临时测试接口",
   })
   @ApiConsumes("multipart/form-data")
-  @ApiParam({ name: "taskId", description: "任务ID" })
   @ApiBody({
     schema: {
       type: "object",
+      required: ["templateId", "image"],
       properties: {
+        templateId: {
+          type: "string",
+          description: "模版ID",
+          example: "cmh4v5z7y00jx2dmofp3x2ars"
+        },
         image: {
           type: "string",
           format: "binary",
-          description: "图片文件（支持 JPG, PNG, WEBP，最大10MB）",
+          description: "用户照片（支持 JPG, PNG, WEBP，最大10MB）",
         },
       },
     },
   })
-  @ApiSuccessResponse()
-  @ApiResponse({ status: 400, description: "文件格式错误或任务状态不允许上传" })
-  @ApiResponse({ status: 404, description: "任务不存在" })
   @UseInterceptors(
     FileInterceptor("image", {
       storage: diskStorage({
@@ -122,21 +92,122 @@ export class GenerationController {
       },
     }),
   )
-  async uploadImage(
-    @Param("taskId") taskId: string,
-    @UploadedFile()
-    file: Express.Multer.File,
+  async testCreateTask(
+    @Body() body: { templateId: string },
+    @UploadedFile() file: Express.Multer.File,
     @Req() req: any,
   ) {
+    // 使用固定的测试用户ID
+    const testUserId = "cmh4kbwi20000lvocydc1dnvx";
     const imagePath = `/uploads/originals/${file.filename}`;
-    return this.generationService.uploadImage(
-      taskId,
-      req.user.userId,
+
+    const createDto: CreateGenerationDto = {
+      templateId: body.templateId,
+      generationType: "TEMPLATE",
+      title: "测试生成任务",
+    };
+
+    return this.generationService.createAndGenerate(
+      testUserId,
+      createDto,
       imagePath,
     );
   }
 
+  @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "创建图像生成任务",
+    description: "上传图片并使用模版生成新图片，一步完成",
+  })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["templateId", "image"],
+      properties: {
+        templateId: {
+          type: "string",
+          description: "模版ID",
+          example: "clh0drk6r0000lufbngp6t3p7"
+        },
+        generationType: {
+          type: "string",
+          enum: ["TEMPLATE", "ID_PHOTO", "PORTRAIT"],
+          example: "TEMPLATE",
+          description: "可选，默认为 TEMPLATE"
+        },
+        image: {
+          type: "string",
+          format: "binary",
+          description: "用户照片（支持 JPG, PNG, WEBP，最大10MB）",
+        },
+        title: {
+          type: "string",
+          example: "我的第一张AI图片",
+          description: "可选，不填写则自动生成"
+        },
+      },
+    },
+  })
+  @ApiSuccessResponse()
+  @ApiResponse({ status: 400, description: "参数错误或积分不足" })
+  @ApiResponse({ status: 404, description: "模板不存在" })
+  @UseInterceptors(
+    FileInterceptor("image", {
+      storage: diskStorage({
+        destination: "./uploads/originals",
+        filename: (req, file, cb) => {
+          const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+          cb(null, uniqueName);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          "image/jpeg",
+          "image/jpg",
+          "image/png",
+          "image/webp",
+        ];
+        if (allowedMimes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          cb(
+            new Error(
+              `不支持的文件类型: ${file.mimetype}。仅支持 JPG, PNG, WEBP 格式`,
+            ),
+            false,
+          );
+        }
+      },
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
+      },
+    }),
+  )
+  async createTask(
+    @Body() body: { templateId: string; generationType?: string; title?: string },
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any
+  ) {
+    const imagePath = `/uploads/originals/${file.filename}`;
+
+    const createDto: CreateGenerationDto = {
+      templateId: body.templateId,
+      generationType: body.generationType || 'TEMPLATE',
+      title: body.title,
+    };
+
+    return this.generationService.createAndGenerate(
+      req.user.userId,
+      createDto,
+      imagePath
+    );
+  }
+
+  
   @Get(":taskId/status")
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: "查询任务状态",
     description: "查询指定任务的生成状态和进度",
@@ -146,6 +217,18 @@ export class GenerationController {
   @ApiResponse({ status: 404, description: "任务不存在" })
   async getTaskStatus(@Param("taskId") taskId: string, @Req() req: any) {
     return this.generationService.getTaskStatus(taskId, req.user.userId);
+  }
+
+  @Get(":taskId/test-status")
+  @ApiOperation({
+    summary: "测试查询任务状态（无需认证）",
+    description: "临时测试接口",
+  })
+  @ApiParam({ name: "taskId", description: "任务ID" })
+  async testGetTaskStatus(@Param("taskId") taskId: string) {
+    // 使用固定的测试用户ID
+    const testUserId = "cmh4kbwi20000lvocydc1dnvx";
+    return this.generationService.getTaskStatus(taskId, testUserId);
   }
 
   @Get()

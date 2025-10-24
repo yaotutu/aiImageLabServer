@@ -74,7 +74,15 @@ export class AuthService {
   }
 
   async validateUser(userId: string) {
-    return this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user || !user.isActive) {
+      return null;
+    }
+
+    return user;
   }
 
   // 微信登录

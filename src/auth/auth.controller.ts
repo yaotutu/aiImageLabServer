@@ -13,7 +13,7 @@ import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { ApiSuccessResponse } from "../common/decorators/api-response.decorator";
 
-@ApiTags("认证")
+@ApiTags("Authentication")
 @Controller("auth")
 export class AuthController {
   constructor(private authService: AuthService) {}

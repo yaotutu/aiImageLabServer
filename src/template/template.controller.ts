@@ -22,7 +22,7 @@ import { ApiSuccessResponse } from "../common/decorators/api-response.decorator"
 import { TemplateService } from "./template.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
-@ApiTags("模版")
+@ApiTags("Templates")
 @Controller("templates")
 export class TemplateController {
   constructor(private templateService: TemplateService) {}

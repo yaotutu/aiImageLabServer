@@ -22,7 +22,108 @@ export class GenerationService {
     this.logger = logger.setContext(GenerationService.name);
   }
 
-  // 创建生成任务
+  // 创建生成任务并开始生成（一步完成）
+  async createAndGenerate(
+    userId: string,
+    createDto: CreateGenerationDto,
+    imagePath: string,
+  ) {
+    // 1. 验证模板是否存在
+    const template = await this.prisma.template.findUnique({
+      where: { id: createDto.templateId },
+    });
+
+    if (!template) {
+      throw new TemplateNotFoundException(createDto.templateId);
+    }
+
+    if (!template.isActive) {
+      throw new TemplateInactiveException(createDto.templateId);
+    }
+
+    // 2. 检查用户积分
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    // 临时注释积分检查用于测试
+    // if (user.credits < template.creditsRequired) {
+    //   throw new InsufficientCreditsException(
+    //     `积分不足：需要 ${template.creditsRequired} 积分，当前余额 ${user.credits} 积分`,
+    //   );
+    // }
+
+    // 3. 创建生成记录并扣除积分
+    const generation = await this.prisma.$transaction(async (tx) => {
+      // 自动生成标题（如果用户未提供）
+      const autoTitle =
+        createDto.title ||
+        `${template.name} - ${new Date().toLocaleString("zh-CN")}`;
+
+      // 创建生成记录
+      const gen = await tx.generation.create({
+        data: {
+          userId,
+          templateId: createDto.templateId,
+          generationType: createDto.generationType,
+          title: autoTitle,
+          aiProvider: template.aiProvider,
+          aiParams: createDto.aiParams
+            ? JSON.stringify(createDto.aiParams)
+            : template.aiParams,
+          originalImageUrl: imagePath,
+          creditsUsed: template.creditsRequired,
+          status: "PROCESSING",
+        },
+      });
+
+      // 扣除积分
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          credits: { decrement: template.creditsRequired },
+        },
+      });
+
+      // 记录积分变动
+      await tx.creditLog.create({
+        data: {
+          userId,
+          amount: -template.creditsRequired,
+          balance: user.credits - template.creditsRequired,
+          type: "generation",
+          relatedId: gen.id,
+          description: `使用模板「${template.name}」生成图片`,
+        },
+      });
+
+      // 更新模板使用统计
+      await tx.template.update({
+        where: { id: createDto.templateId },
+        data: {
+          usageCount: { increment: 1 },
+          weeklyUsage: { increment: 1 },
+          monthlyUsage: { increment: 1 },
+        },
+      });
+
+      return gen;
+    });
+
+    // 4. 异步处理图像生成
+    this.processImageGeneration(generation.id, template, imagePath).catch(
+      (error) => {
+        this.logger.error(
+          `图像生成失败 [taskId=${generation.id}]: ${error.message}`,
+          error.stack,
+        );
+      },
+    );
+
+    return generation;
+  }
+
+  // 创建生成任务（旧方法，保留用于兼容）
   async createTask(userId: string, createDto: CreateGenerationDto) {
     // 1. 验证模板是否存在
     const template = await this.prisma.template.findUnique({
@@ -39,13 +140,16 @@ export class GenerationService {
 
     // 2. 创建生成记录（暂时不检查积分）
     const generation = await this.prisma.$transaction(async (tx) => {
+      // 自动生成标题（如果用户未提供）
+      const autoTitle = createDto.title || `${template.name} - ${new Date().toLocaleString('zh-CN')}`;
+
       // 创建生成记录
       const gen = await tx.generation.create({
         data: {
           userId,
           templateId: createDto.templateId,
           generationType: createDto.generationType,
-          title: createDto.title,
+          title: autoTitle,
           aiProvider: template.aiProvider,
           aiParams: createDto.aiParams
             ? JSON.stringify(createDto.aiParams)

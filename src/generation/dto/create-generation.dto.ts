@@ -4,9 +4,10 @@ export class CreateGenerationDto {
   @IsString()
   templateId: string;
 
+  @IsOptional()
   @IsString()
   @IsIn(['TEMPLATE', 'ID_PHOTO', 'PORTRAIT'])
-  generationType: string;
+  generationType?: string;
 
   @IsOptional()
   @IsString()

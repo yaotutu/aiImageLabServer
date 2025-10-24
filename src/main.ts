@@ -3,7 +3,6 @@ import { ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
-import { apiReference } from "@scalar/express-api-reference";
 import { HttpExceptionFilter } from "./common/filters/http-exception.filter";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { LoggingInterceptor } from "./common/interceptors/logging.interceptor";
@@ -54,21 +53,34 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 生成 OpenAPI 文档
+  // 生成 OpenAPI 3.0 规范的文档
   const config = new DocumentBuilder()
-    .setTitle("AI图像生成平台API")
+    .setTitle("AI Image Generation API")
     .setDescription(
-      "AI图像生成后端服务的完整API文档，包含认证、用户管理、模版管理、图像生成等模块",
+      "Complete API documentation for AI Image Generation backend service. " +
+      "Includes authentication, user management, template management, and image generation modules.",
     )
-    .setVersion("1.0")
+    .setVersion("3.0.0")
+    .setContact(
+      "AI Image Lab Team",
+      "https://aiimagelab.com",
+      "support@aiimagelab.com"
+    )
+    .setLicense(
+      "MIT",
+      "https://opensource.org/licenses/MIT"
+    )
+    .setExternalDoc(
+      "Find out more about our platform",
+      "https://aiimagelab.com/docs"
+    )
     .addBearerAuth(
       {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        name: "JWT",
-        description: "请输入用户JWT Token",
-        in: "header",
+        description: "Enter your JWT access token. Example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbWg0a2J3aTIwMDAwbHZvY3lkYzFkbnZ4IiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzMwNDAwMTEwLCJleHAiOjE3MzA0MDM3MTB9.HFqKC59Syu8T7VXDa9A9KJh2Z9HhVnJzZ5x6N9nYp9w",
+        name: "Authorization",
       },
       "JWT-auth",
     )
@@ -77,34 +89,50 @@ async function bootstrap() {
         type: "http",
         scheme: "bearer",
         bearerFormat: "JWT",
-        name: "Admin JWT",
-        description: "请输入管理员JWT Token",
-        in: "header",
+        description: "Enter your admin JWT access token. Example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJjbWg0a2J3aTIwMDAwbHZvY3lkYzFkbnZ4IiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzMwNDAwMTEwLCJleHAiOjE3MzA0MDM3MTB9.HFqKC59Syu8T7VXDa9A9KJh2Z9HhVnJzZ5x6N9nYp9w",
+        name: "Authorization",
       },
       "Admin-JWT-auth",
     )
-    .addTag("系统", "系统信息和健康检查")
-    .addTag("认证", "用户注册、登录等认证接口")
-    .addTag("用户", "用户信息管理、密码修改、积分查询等")
-    .addTag("模版", "模版广场、模版管理、搜索等")
-    .addTag("图像生成", "AI图像生成任务的创建、上传、查询和管理")
+    .addTag("Health", "System information and health checks")
+    .addTag("Authentication", "User registration, login and authentication endpoints")
+    .addTag("Users", "User profile management, password changes, credits and usage stats")
+    .addTag("Templates", "Template gallery, management, search and recommendations")
+    .addTag("Generations", "AI image generation tasks, status tracking and results")
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
 
-  // 使用 Scalar 渲染 API 文档
-  const httpAdapter = app.getHttpAdapter();
-  const scalarMiddleware = apiReference({
-    spec: {
-      content: document,
-    },
-    theme: "purple",
-    metaData: {
-      title: "AI图像生成平台 - API文档",
+  // 使用 Swagger UI 渲染 API 文档
+  SwaggerModule.setup("/api-docs", app, document, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: "AI图像生成平台 - API文档",
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      showExtensions: true,
+      showCommonExtensions: true,
+      docExpansion: 'none',
+      defaultModelsExpandDepth: 1,
+      defaultModelExpandDepth: 1,
     },
   });
 
-  httpAdapter.get("/api-docs", scalarMiddleware);
+  // 简单的 JSON API 端点测试
+  const httpAdapter = app.getHttpAdapter();
+  httpAdapter.get("/test-api", (_req, res) => {
+    res.json({
+      message: "API 工作正常！",
+      timestamp: new Date().toISOString(),
+      serverIp: "192.168.110.241",
+      availableEndpoints: [
+        "/api-docs (Swagger UI)",
+        "/api/health",
+        "/api/templates"
+      ]
+    });
+  });
 
   // 启动服务 - 监听所有网络接口，允许局域网访问
   await app.listen(port, '0.0.0.0');

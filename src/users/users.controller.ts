@@ -20,7 +20,7 @@ import { UsersService } from "./users.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ApiSuccessResponse } from "../common/decorators/api-response.decorator";
 
-@ApiTags("用户")
+@ApiTags("Users")
 @ApiBearerAuth("JWT-auth")
 @Controller("users")
 @UseGuards(JwtAuthGuard)
