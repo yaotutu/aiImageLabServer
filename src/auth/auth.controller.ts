@@ -9,6 +9,9 @@ import {
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import { JwtAdminAuthGuard } from "./jwt-admin-auth.guard";
+import { RegisterDto } from "./dto/register.dto";
+import { LoginDto } from "./dto/login.dto";
+import { ApiSuccessResponse } from "../common/decorators/api-response.decorator";
 
 @ApiTags("认证")
 @Controller("auth")
@@ -20,58 +23,25 @@ export class AuthController {
     summary: "邮箱注册",
     description: "使用邮箱和密码注册新用户账号",
   })
-  @ApiBody({
-    schema: {
-      type: "object",
-      required: ["email", "password"],
-      properties: {
-        email: {
-          type: "string",
-          example: "user@example.com",
-          description: "邮箱地址",
-        },
-        password: {
-          type: "string",
-          example: "Password123",
-          description: "密码",
-        },
-        nickname: {
-          type: "string",
-          example: "用户昵称",
-          description: "昵称（可选，不提供则使用邮箱前缀）",
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 201, description: "注册成功" })
-  @ApiResponse({ status: 400, description: "参数错误" })
-  @ApiResponse({ status: 409, description: "该邮箱已被注册" })
-  async register(
-    @Body() body: { email: string; password: string; nickname?: string },
-  ) {
-    return this.authService.register(body.email, body.password, body.nickname);
+  @ApiSuccessResponse()
+  async register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(
+      registerDto.email,
+      registerDto.password,
+      registerDto.nickname,
+    );
   }
 
   @Post("login/email")
   @ApiOperation({ summary: "邮箱登录", description: "使用邮箱和密码登录" })
-  @ApiBody({
-    schema: {
-      type: "object",
-      required: ["email", "password"],
-      properties: {
-        email: { type: "string", example: "user@example.com" },
-        password: { type: "string", example: "Password123" },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: "登录成功" })
-  @ApiResponse({ status: 401, description: "认证失败" })
-  async login(@Body() body: { email: string; password: string }) {
-    return this.authService.login(body.email, body.password);
+  @ApiSuccessResponse()
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto.email, loginDto.password);
   }
 
   @Post("login/wechat")
   @ApiOperation({ summary: "微信登录", description: "使用微信授权信息登录" })
+  @ApiSuccessResponse()
   @ApiBody({
     schema: {
       type: "object",
@@ -84,8 +54,6 @@ export class AuthController {
       },
     },
   })
-  @ApiResponse({ status: 200, description: "登录成功" })
-  @ApiResponse({ status: 400, description: "参数错误" })
   async wechatLogin(
     @Body()
     body: {
@@ -103,6 +71,7 @@ export class AuthController {
     summary: "管理员登录",
     description: "管理员使用用户名密码登录",
   })
+  @ApiSuccessResponse()
   @ApiBody({
     schema: {
       type: "object",
@@ -113,8 +82,6 @@ export class AuthController {
       },
     },
   })
-  @ApiResponse({ status: 200, description: "登录成功" })
-  @ApiResponse({ status: 401, description: "认证失败" })
   async adminLogin(@Body() body: { username: string; password: string }) {
     return this.authService.adminLogin(body.username, body.password);
   }
@@ -126,8 +93,7 @@ export class AuthController {
     summary: "获取当前用户信息",
     description: "获取当前登录用户的详细信息",
   })
-  @ApiResponse({ status: 200, description: "成功" })
-  @ApiResponse({ status: 401, description: "未授权" })
+  @ApiSuccessResponse()
   async getCurrentUser(@Req() req: any) {
     return this.authService.getCurrentUser(req.user.userId);
   }
@@ -139,8 +105,7 @@ export class AuthController {
     summary: "获取当前管理员信息",
     description: "获取当前登录管理员的详细信息",
   })
-  @ApiResponse({ status: 200, description: "成功" })
-  @ApiResponse({ status: 401, description: "未授权" })
+  @ApiSuccessResponse()
   async getCurrentAdmin(@Req() req: any) {
     return this.authService.getCurrentAdmin(req.user.adminId);
   }
@@ -152,6 +117,7 @@ export class AuthController {
     summary: "绑定微信账号",
     description: "为当前用户绑定微信账号",
   })
+  @ApiSuccessResponse()
   @ApiBody({
     schema: {
       type: "object",
@@ -162,9 +128,6 @@ export class AuthController {
       },
     },
   })
-  @ApiResponse({ status: 200, description: "绑定成功" })
-  @ApiResponse({ status: 401, description: "未授权" })
-  @ApiResponse({ status: 409, description: "微信账号已被绑定" })
   async bindWechat(
     @Req() req: any,
     @Body() body: { openId: string; unionId?: string },

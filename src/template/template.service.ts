@@ -1,9 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { AppLoggerService } from "../common/logger/logger.service";
+import {
+  TemplateNotFoundException,
+  TemplateInactiveException,
+} from "../common/exceptions/business.exception";
 
 @Injectable()
 export class TemplateService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger: AppLoggerService;
+
+  constructor(
+    private prisma: PrismaService,
+    logger: AppLoggerService,
+  ) {
+    this.logger = logger.setContext(TemplateService.name);
+  }
 
   // 获取所有模版（支持分页和筛选）
   async findAll(params: {
@@ -13,7 +25,13 @@ export class TemplateService {
     skip?: number;
     take?: number;
   }) {
-    const { category, isPremium, isActive = true, skip = 0, take = 20 } = params;
+    const {
+      category,
+      isPremium,
+      isActive = true,
+      skip = 0,
+      take = 20,
+    } = params;
 
     const where: any = { isActive };
 
@@ -31,9 +49,9 @@ export class TemplateService {
         skip,
         take,
         orderBy: [
-          { sortOrder: 'desc' },
-          { hotScore: 'desc' },
-          { createdAt: 'desc' },
+          { sortOrder: "desc" },
+          { hotScore: "desc" },
+          { createdAt: "desc" },
         ],
       }),
       this.prisma.template.count({ where }),
@@ -55,7 +73,7 @@ export class TemplateService {
     });
 
     if (!template) {
-      throw new NotFoundException('模版不存在');
+      throw new TemplateNotFoundException(id);
     }
 
     return template;
@@ -68,10 +86,7 @@ export class TemplateService {
         category,
         isActive: true,
       },
-      orderBy: [
-        { sortOrder: 'desc' },
-        { hotScore: 'desc' },
-      ],
+      orderBy: [{ sortOrder: "desc" }, { hotScore: "desc" }],
     });
   }
 
@@ -80,10 +95,7 @@ export class TemplateService {
     return this.prisma.template.findMany({
       where: { isActive: true },
       take: limit,
-      orderBy: [
-        { hotScore: 'desc' },
-        { usageCount: 'desc' },
-      ],
+      orderBy: [{ hotScore: "desc" }, { usageCount: "desc" }],
     });
   }
 
@@ -98,7 +110,7 @@ export class TemplateService {
           { tags: { contains: keyword } },
         ],
       },
-      orderBy: { hotScore: 'desc' },
+      orderBy: { hotScore: "desc" },
     });
   }
 
@@ -113,7 +125,7 @@ export class TemplateService {
         weeklyUsage: template.weeklyUsage + 1,
         monthlyUsage: template.monthlyUsage + 1,
         // 简单的热度计算：使用次数 + 点赞数 * 2
-        hotScore: (template.usageCount + 1) + (template.likeCount * 2),
+        hotScore: template.usageCount + 1 + template.likeCount * 2,
       },
     });
   }
@@ -125,8 +137,12 @@ export class TemplateService {
     return this.prisma.template.update({
       where: { id },
       data: {
-        likeCount: isLike ? template.likeCount + 1 : Math.max(0, template.likeCount - 1),
-        hotScore: (template.usageCount) + ((isLike ? template.likeCount + 1 : template.likeCount - 1) * 2),
+        likeCount: isLike
+          ? template.likeCount + 1
+          : Math.max(0, template.likeCount - 1),
+        hotScore:
+          template.usageCount +
+          (isLike ? template.likeCount + 1 : template.likeCount - 1) * 2,
       },
     });
   }
@@ -147,7 +163,7 @@ export class TemplateService {
     sortOrder?: number;
     createdBy?: string;
   }) {
-    return this.prisma.template.create({
+    const template = await this.prisma.template.create({
       data: {
         ...data,
         tags: data.tags ? JSON.stringify(data.tags) : null,
@@ -155,6 +171,9 @@ export class TemplateService {
         aiParams: data.aiParams ? JSON.stringify(data.aiParams) : null,
       },
     });
+
+    this.logger.log(`创建模板: ${data.name}`);
+    return template;
   }
 
   // 更新模版（管理员功能）
@@ -190,19 +209,25 @@ export class TemplateService {
       updateData.aiParams = JSON.stringify(data.aiParams);
     }
 
-    return this.prisma.template.update({
+    const template = await this.prisma.template.update({
       where: { id },
       data: updateData,
     });
+
+    this.logger.log(`更新模板: id=${id}`);
+    return template;
   }
 
   // 删除模版（软删除）
   async delete(id: string) {
     await this.findById(id);
 
-    return this.prisma.template.update({
+    const template = await this.prisma.template.update({
       where: { id },
       data: { isActive: false },
     });
+
+    this.logger.log(`删除模板: id=${id}`);
+    return template;
   }
 }

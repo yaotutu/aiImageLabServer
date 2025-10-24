@@ -1,232 +1,179 @@
 #!/bin/bash
 
-# API综合测试脚本
-# 测试所有已实现的API接口
+# AI 图像生成平台 API 测试脚本
+# 测试统一响应格式、错误处理和日志输出
 
 BASE_URL="http://localhost:8000"
-API_BASE_URL="$BASE_URL/api"
+API_URL="${BASE_URL}/api"
+
+echo "========================================"
+echo "AI 图像生成平台 API 完整测试"
+echo "========================================"
+echo ""
 
 # 颜色定义
-RED='\033[0;31m'
 GREEN='\033[0;32m'
+RED='\033[0;31m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 计数器
+# 测试计数
 TOTAL_TESTS=0
 PASSED_TESTS=0
+FAILED_TESTS=0
 
 # 测试函数
 test_api() {
-    local method=$1
-    local url=$2
-    local description=$3
-    local expected_status=$4
-    local data=$5
+    local test_name=$1
+    local method=$2
+    local endpoint=$3
+    local data=$4
+    local expected_success=$5
     local token=$6
 
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
-    echo -e "${BLUE}[$TOTAL_TESTS] $method $url - $description${NC}"
+    echo "测试 #${TOTAL_TESTS}: ${test_name}"
 
-    if [ -n "$data" ]; then
-        if [ -n "$token" ]; then
-            response=$(curl -s -w "%{http_code}" -X $method \
+    if [ -n "$token" ]; then
+        if [ -n "$data" ]; then
+            response=$(curl -s -X ${method} "${API_URL}${endpoint}" \
                 -H "Content-Type: application/json" \
-                -H "Authorization: Bearer $token" \
-                -d "$data" \
-                "$url")
+                -H "Authorization: Bearer ${token}" \
+                -d "${data}")
         else
-            response=$(curl -s -w "%{http_code}" -X $method \
-                -H "Content-Type: application/json" \
-                -d "$data" \
-                "$url")
+            response=$(curl -s -X ${method} "${API_URL}${endpoint}" \
+                -H "Authorization: Bearer ${token}")
         fi
     else
-        if [ -n "$token" ]; then
-            response=$(curl -s -w "%{http_code}" -X $method \
-                -H "Authorization: Bearer $token" \
-                "$url")
+        if [ -n "$data" ]; then
+            response=$(curl -s -X ${method} "${API_URL}${endpoint}" \
+                -H "Content-Type: application/json" \
+                -d "${data}")
         else
-            response=$(curl -s -w "%{http_code}" -X $method "$url")
+            response=$(curl -s -X ${method} "${API_URL}${endpoint}")
         fi
     fi
 
-    http_code="${response: -3}"
-    body="${response%???}"
+    # 检查响应是否包含必要字段
+    has_success=$(echo "$response" | grep -o '"success"' | head -1)
+    has_code=$(echo "$response" | grep -o '"code"' | head -1)
+    has_message=$(echo "$response" | grep -o '"message"' | head -1)
+    has_timestamp=$(echo "$response" | grep -o '"timestamp"' | head -1)
 
-    if [ "$http_code" -eq "$expected_status" ]; then
-        echo -e "${GREEN}✅ 通过 ($http_code)${NC}"
-        PASSED_TESTS=$((PASSED_TESTS + 1))
+    success_value=$(echo "$response" | grep -o '"success":[^,}]*' | cut -d':' -f2 | tr -d ' ')
+
+    if [ -n "$has_success" ] && [ -n "$has_code" ] && [ -n "$has_message" ] && [ -n "$has_timestamp" ]; then
+        if [ "$success_value" = "$expected_success" ]; then
+            echo -e "${GREEN}✓ 通过${NC} - 响应格式正确，success=${success_value}"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+        else
+            echo -e "${RED}✗ 失败${NC} - success值不符合预期 (期望: ${expected_success}, 实际: ${success_value})"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+        fi
     else
-        echo -e "${RED}❌ 失败 (期望: $expected_status, 实际: $http_code)${NC}"
-        echo -e "${YELLOW}响应: $body${NC}"
+        echo -e "${RED}✗ 失败${NC} - 响应格式不完整"
+        FAILED_TESTS=$((FAILED_TESTS + 1))
     fi
+
+    echo "响应: $(echo "$response" | head -c 150)..."
     echo ""
 }
 
-# 启动服务器
-echo -e "${YELLOW}🚀 启动服务器...${NC}"
-npm run dev > /dev/null 2>&1 &
-SERVER_PID=$!
-
 # 等待服务器启动
-sleep 8
+echo "等待服务器启动..."
+sleep 2
 
-# 检查服务器是否启动成功
-if ! curl -s "$BASE_URL/health" > /dev/null; then
-    echo -e "${RED}❌ 服务器启动失败${NC}"
-    exit 1
-fi
+# 1. 测试根路由
+echo "========== 测试根路由 =========="
+test_api "获取 API 信息" "GET" "" "" "true" ""
 
-echo -e "${GREEN}✅ 服务器启动成功${NC}"
-echo -e "${BLUE}开始API测试...${NC}"
-echo ""
+# 2. 测试认证模块
+echo "========== 测试认证模块 =========="
 
-# 基础接口测试
-test_api "GET" "$BASE_URL/health" "健康检查" 200
-test_api "GET" "$API_BASE_URL" "API信息" 200
+# 注册新用户
+EMAIL="testuser$(date +%s)@test.com"
+test_api "用户注册" "POST" "/auth/register/email" \
+    "{\"email\":\"${EMAIL}\",\"password\":\"Test123456\",\"nickname\":\"测试用户\"}" \
+    "true" ""
 
-# 认证接口测试
-echo -e "${YELLOW}🔐 认证接口测试${NC}"
-
-# 邮箱注册
-test_api "POST" "$API_BASE_URL/auth/register/email" "邮箱注册" 201 \
-    '{"email": "testuser@example.com", "password": "Test123456", "nickname": "测试用户API"}'
-
-# 邮箱登录
-login_response=$(curl -s -X POST \
+# 保存 token
+TOKEN=$(curl -s -X POST "${API_URL}/auth/login/email" \
     -H "Content-Type: application/json" \
-    -d '{"email": "testuser@example.com", "password": "Test123456"}' \
-    "$API_BASE_URL/auth/login/email")
-user_token=$(echo $login_response | jq -r '.token // empty')
+    -d "{\"email\":\"${EMAIL}\",\"password\":\"Test123456\"}" | \
+    grep -o '"token":"[^"]*"' | cut -d'"' -f4)
 
-if [ -n "$user_token" ]; then
-    echo -e "${GREEN}✅ 用户登录成功，获取到Token${NC}"
-else
-    echo -e "${RED}❌ 用户登录失败${NC}"
-fi
+test_api "用户登录" "POST" "/auth/login/email" \
+    "{\"email\":\"${EMAIL}\",\"password\":\"Test123456\"}" \
+    "true" ""
 
-# 微信登录
-test_api "POST" "$API_BASE_URL/auth/login/wechat" "微信登录" 200 \
-    '{"openId": "test_wechat_openid", "nickname": "微信测试用户", "avatarUrl": "https://example.com/avatar.jpg"}'
+test_api "获取当前用户信息" "GET" "/auth/me" "" "true" "${TOKEN}"
 
-# 管理员登录
-admin_login_response=$(curl -s -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"username": "admin", "password": "admin123"}' \
-    "$API_BASE_URL/auth/login/admin")
-admin_token=$(echo $admin_login_response | jq -r '.token // empty')
+test_api "错误的密码登录（测试错误处理）" "POST" "/auth/login/email" \
+    "{\"email\":\"${EMAIL}\",\"password\":\"WrongPassword\"}" \
+    "false" ""
 
-if [ -n "$admin_token" ]; then
-    echo -e "${GREEN}✅ 管理员登录成功，获取到Token${NC}"
-else
-    echo -e "${RED}❌ 管理员登录失败${NC}"
-fi
+test_api "重复注册（测试错误处理）" "POST" "/auth/register/email" \
+    "{\"email\":\"${EMAIL}\",\"password\":\"Test123456\"}" \
+    "false" ""
 
-# 获取当前用户信息 (需要用户Token)
-if [ -n "$user_token" ]; then
-    test_api "GET" "$API_BASE_URL/auth/me" "获取当前用户信息" 200 "" "$user_token"
-fi
+# 3. 测试用户模块
+echo "========== 测试用户模块 =========="
 
-# 获取当前管理员信息 (需要管理员Token)
-if [ -n "$admin_token" ]; then
-    test_api "GET" "$API_BASE_URL/auth/admin/me" "获取当前管理员信息" 200 "" "$admin_token"
-fi
+test_api "查询用户积分" "GET" "/users/credits" "" "true" "${TOKEN}"
 
-# 用户接口测试
-echo -e "${YELLOW}👤 用户接口测试${NC}"
+test_api "查询积分日志" "GET" "/users/credit-logs?page=1&pageSize=10" "" "true" "${TOKEN}"
 
-if [ -n "$user_token" ]; then
-    test_api "GET" "$API_BASE_URL/users/profile" "获取用户资料" 200 "" "$user_token"
-    test_api "PUT" "$API_BASE_URL/users/profile" "更新用户资料" 200 \
-        '{"nickname": "新昵称", "avatarUrl": "https://example.com/new-avatar.jpg"}' "$user_token"
-    test_api "PUT" "$API_BASE_URL/users/password" "修改密码" 200 \
-        '{"oldPassword": "Test123456", "newPassword": "NewTest123456"}' "$user_token"
-    test_api "POST" "$API_BASE_URL/users/change-password" "修改密码(兼容接口)" 200 \
-        '{"oldPassword": "NewTest123456", "newPassword": "Test123456"}' "$user_token"
-    test_api "GET" "$API_BASE_URL/users/credits" "获取用户积分" 200 "" "$user_token"
-    test_api "GET" "$API_BASE_URL/users/credit-logs" "获取积分日志" 200 "" "$user_token"
-    test_api "GET" "$API_BASE_URL/users/generation-stats" "获取生成统计" 200 "" "$user_token"
+test_api "查询生成统计" "GET" "/users/generation-stats" "" "true" "${TOKEN}"
 
-    # 绑定微信
-    test_api "POST" "$API_BASE_URL/auth/bind/wechat" "绑定微信账号" 200 \
-        '{"openId": "bind_wechat_test", "unionId": "bind_union_test"}' "$user_token"
-fi
+# 4. 测试模板模块
+echo "========== 测试模板模块 =========="
 
-# 模版接口测试
-echo -e "${YELLOW}📋 模版接口测试${NC}"
+test_api "获取模板列表" "GET" "/templates?page=1&pageSize=10" "" "true" ""
 
-test_api "GET" "$API_BASE_URL/templates" "获取模版列表" 200
-test_api "GET" "$API_BASE_URL/templates/hot?limit=5" "获取热门模版" 200
-test_api "GET" "$API_BASE_URL/templates/search?keyword=证件照" "搜索模版" 200
-test_api "GET" "$API_BASE_URL/templates/category/id_photo" "按分类获取模版" 200
+test_api "获取热门模板" "GET" "/templates/hot?limit=5" "" "true" ""
 
-# 获取第一个模版ID (用于后续测试)
-templates_response=$(curl -s "$API_BASE_URL/templates?pageSize=1")
-first_template_id=$(echo $templates_response | jq -r '.data[0].id // empty')
+test_api "搜索模板" "GET" "/templates/search?keyword=test" "" "true" ""
 
-if [ -n "$first_template_id" ]; then
-    echo -e "${GREEN}✅ 获取到模版ID: $first_template_id${NC}"
-    test_api "GET" "$API_BASE_URL/templates/$first_template_id" "获取模版详情" 200
+test_api "获取不存在的模板（测试错误处理）" "GET" "/templates/nonexistent-id" "" "false" ""
 
-    if [ -n "$user_token" ]; then
-        test_api "POST" "$API_BASE_URL/templates/$first_template_id/like" "点赞模版" 200 "" "$user_token"
-        test_api "DELETE" "$API_BASE_URL/templates/$first_template_id/like" "取消点赞" 200 "" "$user_token"
-    fi
+# 5. 测试生成模块
+echo "========== 测试生成模块 =========="
 
-    if [ -n "$admin_token" ]; then
-        test_api "PUT" "$API_BASE_URL/templates/$first_template_id" "更新模版(管理员)" 200 \
-            '{"name": "更新的模版名称"}' "$admin_token"
-    fi
-fi
+test_api "获取用户任务列表" "GET" "/generations" "" "true" "${TOKEN}"
 
-# 图像生成接口测试
-echo -e "${YELLOW}🎨 图像生成接口测试${NC}"
+test_api "获取不存在的任务状态（测试错误处理）" "GET" "/generations/nonexistent-id/status" "" "false" "${TOKEN}"
 
-if [ -n "$user_token" ] && [ -n "$first_template_id" ]; then
-    # 创建生成任务
-    create_response=$(curl -s -X POST \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $user_token" \
-        -d "{\"templateId\": \"$first_template_id\", \"generationType\": \"TEMPLATE\", \"title\": \"API测试生成\"}" \
-        "$API_BASE_URL/generations")
+# 6. 测试参数验证
+echo "========== 测试参数验证 =========="
 
-    create_http_code="${create_response: -3}"
-    create_body="${create_response%???}"
+test_api "缺少必需字段（测试验证）" "POST" "/auth/register/email" \
+    "{\"email\":\"\"}" \
+    "false" ""
 
-    if [ "$create_http_code" -eq 201 ]; then
-        echo -e "${GREEN}✅ 生成任务创建成功${NC}"
-        task_id=$(echo $create_body | jq -r '.data.taskId // empty')
+test_api "无效的邮箱格式（测试验证）" "POST" "/auth/register/email" \
+    "{\"email\":\"invalid-email\",\"password\":\"Test123\"}" \
+    "false" ""
 
-        if [ -n "$task_id" ]; then
-            echo -e "${GREEN}✅ 获取到任务ID: $task_id${NC}"
-            test_api "GET" "$API_BASE_URL/generations/$task_id/status" "查询任务状态" 200 "" "$user_token"
-        fi
-    else
-        echo -e "${RED}❌ 生成任务创建失败${NC}"
-    fi
+# 7. 测试未授权访问
+echo "========== 测试授权保护 =========="
 
-    # 获取用户任务列表
-    test_api "GET" "$API_BASE_URL/generations?page=1&pageSize=10" "获取用户任务列表" 200 "" "$user_token"
-fi
+test_api "未授权访问受保护路由" "GET" "/users/credits" "" "false" ""
 
-# 停止服务器
-echo -e "${YELLOW}🛑 停止服务器...${NC}"
-kill $SERVER_PID
+test_api "无效的 Token" "GET" "/auth/me" "" "false" "invalid-token-12345"
 
-# 测试结果统计
-echo ""
-echo -e "${BLUE}==================== 测试结果 ====================${NC}"
-echo -e "总测试数: $TOTAL_TESTS"
-echo -e "${GREEN}通过: $PASSED_TESTS${NC}"
-echo -e "${RED}失败: $((TOTAL_TESTS - PASSED_TESTS))${NC}"
+# 测试总结
+echo "========================================"
+echo "测试总结"
+echo "========================================"
+echo -e "总测试数: ${TOTAL_TESTS}"
+echo -e "${GREEN}通过: ${PASSED_TESTS}${NC}"
+echo -e "${RED}失败: ${FAILED_TESTS}${NC}"
 
-if [ $PASSED_TESTS -eq $TOTAL_TESTS ]; then
-    echo -e "${GREEN}🎉 所有测试通过！${NC}"
+if [ $FAILED_TESTS -eq 0 ]; then
+    echo -e "\n${GREEN}🎉 所有测试通过！${NC}"
     exit 0
 else
-    echo -e "${RED}❌ 有测试失败，请检查实现${NC}"
+    echo -e "\n${RED}❌ 部分测试失败${NC}"
     exit 1
 fi

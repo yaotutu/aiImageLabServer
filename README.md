@@ -21,11 +21,13 @@
 
 ## 🛠️ 技术栈
 
-- **后端框架**: Express.js + TypeScript
+- **后端框架**: NestJS + TypeScript
 - **数据库**: SQLite + Prisma ORM
-- **认证**: JWT (用户端) + Session (管理端)
+- **认证**: JWT + Passport
+- **日志系统**: Winston (支持控制台和文件日志)
+- **API文档**: Swagger/OpenAPI + Scalar UI
 - **文件处理**: Multer + Sharp
-- **架构模式**: 适配器模式 (AI服务)
+- **架构模式**: 模块化架构 + 依赖注入
 
 ## 📦 快速开始
 
@@ -64,29 +66,41 @@ npm run prisma:seed
 npm run dev
 ```
 
-服务启动后访问: http://localhost:3000
+服务启动后访问: http://localhost:8000
+
+**注意**: `npm run dev` 会自动检测并清理占用配置端口的进程，无需手动处理端口占用问题。
+
+### 6. 查看API文档
+启动服务后访问: http://localhost:8000/api-docs
 
 ## 📁 项目结构
 
 ```
 aiImageLabServer/
 ├── src/
-│   ├── controllers/          # 控制器层
-│   │   └── admin/           # 管理端控制器
-│   ├── services/            # 业务逻辑层
-│   │   ├── ai-adapters/    # AI服务适配器
-│   │   └── utils/          # 工具类
-│   ├── middleware/          # 中间件
-│   ├── routes/              # 路由定义
-│   │   └── admin/          # 管理端路由
-│   ├── config/              # 配置文件
-│   └── models/              # 数据模型
+│   ├── auth/                # 认证模块
+│   ├── users/               # 用户模块
+│   ├── template/            # 模板模块
+│   ├── generation/          # 图像生成模块
+│   ├── common/              # 公共模块
+│   │   ├── constants/       # 常量定义
+│   │   ├── decorators/      # 自定义装饰器
+│   │   ├── dto/             # 数据传输对象
+│   │   ├── exceptions/      # 自定义异常
+│   │   ├── filters/         # 异常过滤器
+│   │   ├── interceptors/    # 拦截器
+│   │   ├── interfaces/      # 接口定义
+│   │   └── logger/          # 日志服务
+│   ├── services/            # 业务服务
+│   │   └── ai-adapters/    # AI服务适配器
+│   └── prisma/              # Prisma模块
 ├── prisma/                  # 数据库相关
 │   ├── schema.prisma       # 数据模型定义
 │   └── seed.ts             # 初始化数据
+├── scripts/                 # 脚本文件
+│   └── start-dev.sh        # 开发启动脚本
 ├── uploads/                 # 文件上传目录
-├── tests/                   # 测试文件
-└── docs/                    # 文档
+└── logs/                    # 日志文件目录
 ```
 
 ## 🔗 API接口

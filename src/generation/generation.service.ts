@@ -1,16 +1,26 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { CreateGenerationDto } from './dto/create-generation.dto';
-import { AliyunQwenAdapter } from '../services/ai-adapters/aliyun-qwen.adapter';
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "../prisma/prisma.service";
+import { CreateGenerationDto } from "./dto/create-generation.dto";
+import { AliyunQwenAdapter } from "../services/ai-adapters/aliyun-qwen.adapter";
+import { AppLoggerService } from "../common/logger/logger.service";
+import {
+  GenerationNotFoundException,
+  InsufficientCreditsException,
+  TemplateNotFoundException,
+  TemplateInactiveException,
+} from "../common/exceptions/business.exception";
 
 @Injectable()
 export class GenerationService {
-  private readonly logger = new Logger(GenerationService.name);
+  private readonly logger: AppLoggerService;
 
   constructor(
     private prisma: PrismaService,
     private aliyunAdapter: AliyunQwenAdapter,
-  ) {}
+    logger: AppLoggerService,
+  ) {
+    this.logger = logger.setContext(GenerationService.name);
+  }
 
   // 创建生成任务
   async createTask(userId: string, createDto: CreateGenerationDto) {
@@ -20,11 +30,11 @@ export class GenerationService {
     });
 
     if (!template) {
-      throw new NotFoundException('模板不存在');
+      throw new TemplateNotFoundException(createDto.templateId);
     }
 
     if (!template.isActive) {
-      throw new BadRequestException('该模板已下架');
+      throw new TemplateInactiveException(createDto.templateId);
     }
 
     // 2. 创建生成记录（暂时不检查积分）
@@ -41,7 +51,7 @@ export class GenerationService {
             ? JSON.stringify(createDto.aiParams)
             : template.aiParams,
           creditsUsed: 0, // 暂时不消耗积分
-          status: 'PENDING',
+          status: "PENDING",
         },
       });
 
@@ -82,18 +92,14 @@ export class GenerationService {
     });
 
     if (!generation) {
-      throw new NotFoundException('任务不存在');
+      throw new GenerationNotFoundException(taskId);
     }
 
     return generation;
   }
 
   // 获取用户任务列表
-  async getUserTasks(
-    userId: string,
-    page: number = 1,
-    pageSize: number = 20,
-  ) {
+  async getUserTasks(userId: string, page: number = 1, pageSize: number = 20) {
     const skip = (page - 1) * pageSize;
 
     const [tasks, total] = await Promise.all([
@@ -101,7 +107,7 @@ export class GenerationService {
         where: { userId },
         skip,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         include: {
           template: {
             select: {
@@ -136,27 +142,27 @@ export class GenerationService {
     });
 
     if (!generation) {
-      throw new NotFoundException('任务不存在');
+      throw new GenerationNotFoundException(taskId);
     }
 
-    if (generation.status === 'SUCCESS') {
-      throw new BadRequestException('已完成的任务无法取消');
+    if (generation.status === "SUCCESS") {
+      throw new GenerationNotFoundException("已完成的任务无法取消");
     }
 
-    if (generation.status === 'FAILED') {
-      throw new BadRequestException('已失败的任务无法取消');
+    if (generation.status === "FAILED") {
+      throw new GenerationNotFoundException("已失败的任务无法取消");
     }
 
     // 更新任务状态为失败
     const updated = await this.prisma.generation.update({
       where: { id: taskId },
       data: {
-        status: 'FAILED',
-        errorMessage: '用户取消',
+        status: "FAILED",
+        errorMessage: "用户取消",
       },
     });
 
-    return { message: '任务已取消', task: updated };
+    return { message: "任务已取消", task: updated };
   }
 
   // 处理图片上传（需要文件路径）
@@ -172,11 +178,11 @@ export class GenerationService {
     });
 
     if (!generation) {
-      throw new NotFoundException('任务不存在');
+      throw new GenerationNotFoundException(taskId);
     }
 
-    if (generation.status !== 'PENDING') {
-      throw new BadRequestException('任务状态不允许上传图片');
+    if (generation.status !== "PENDING") {
+      throw new GenerationNotFoundException("任务状态不允许上传图片");
     }
 
     // 更新图片路径和状态（暂时不扣除积分）
@@ -184,7 +190,7 @@ export class GenerationService {
       where: { id: taskId },
       data: {
         originalImageUrl: imagePath,
-        status: 'PROCESSING',
+        status: "PROCESSING",
       },
     });
 
@@ -218,9 +224,7 @@ export class GenerationService {
         try {
           aiParams = JSON.parse(template.aiParams);
         } catch (e) {
-          this.logger.warn(
-            `解析模板 AI 参数失败 [templateId=${template.id}]`,
-          );
+          this.logger.warn(`解析模板 AI 参数失败 [templateId=${template.id}]`);
         }
       }
 
@@ -231,9 +235,9 @@ export class GenerationService {
       // 调用阿里云适配器生成图像
       const result = await this.aliyunAdapter.generateImage({
         imageUrl: fullImageUrl,
-        prompt: template.prompt || '根据模板生成高质量图像',
+        prompt: template.prompt || "根据模板生成高质量图像",
         negativePrompt: aiParams.negativePrompt,
-        model: aiParams.model || 'qwen-image-edit',
+        model: aiParams.model || "qwen-image-edit",
         ...aiParams,
       });
 
@@ -243,7 +247,7 @@ export class GenerationService {
           where: { id: taskId },
           data: {
             resultImageUrl: result.imageUrl,
-            status: 'SUCCESS',
+            status: "SUCCESS",
             aiRequestId: result.requestId,
             completedAt: new Date(),
           },
@@ -256,22 +260,20 @@ export class GenerationService {
         await this.prisma.generation.update({
           where: { id: taskId },
           data: {
-            status: 'FAILED',
-            errorMessage: result.error || '图像生成失败',
+            status: "FAILED",
+            errorMessage: result.error || "图像生成失败",
           },
         });
 
-        this.logger.error(
-          `图像生成失败 [taskId=${taskId}]: ${result.error}`,
-        );
+        this.logger.error(`图像生成失败 [taskId=${taskId}]: ${result.error}`);
       }
     } catch (error: any) {
       // 异常情况，更新任务状态为失败
       await this.prisma.generation.update({
         where: { id: taskId },
         data: {
-          status: 'FAILED',
-          errorMessage: error.message || '图像生成过程中发生错误',
+          status: "FAILED",
+          errorMessage: error.message || "图像生成过程中发生错误",
         },
       });
 

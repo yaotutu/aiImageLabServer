@@ -1,18 +1,25 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  ConflictException,
-} from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../prisma/prisma.service";
 import * as bcrypt from "bcryptjs";
+import { AppLoggerService } from "../common/logger/logger.service";
+import {
+  EmailAlreadyExistsException,
+  InvalidCredentialsException,
+  UnauthorizedException,
+} from "../common/exceptions/business.exception";
 
 @Injectable()
 export class AuthService {
+  private readonly logger: AppLoggerService;
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-  ) {}
+    logger: AppLoggerService,
+  ) {
+    this.logger = logger.setContext(AuthService.name);
+  }
 
   async register(email: string, password: string, nickname?: string) {
     const existing = await this.prisma.user.findUnique({
@@ -20,7 +27,7 @@ export class AuthService {
     });
 
     if (existing) {
-      throw new ConflictException("该邮箱已被注册");
+      throw new EmailAlreadyExistsException();
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -41,6 +48,7 @@ export class AuthService {
     const token = this.generateToken(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
+    this.logger.log(`用户注册成功: ${email}`);
     return { token, user: userWithoutPassword };
   }
 
@@ -50,17 +58,18 @@ export class AuthService {
     });
 
     if (!user || !user.passwordHash) {
-      throw new UnauthorizedException("邮箱或密码错误");
+      throw new InvalidCredentialsException();
     }
 
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
-      throw new UnauthorizedException("邮箱或密码错误");
+      throw new InvalidCredentialsException();
     }
 
     const token = this.generateToken(user);
     const { passwordHash, ...userWithoutPassword } = user;
 
+    this.logger.log(`用户登录成功: ${email}`);
     return { token, user: userWithoutPassword };
   }
 
@@ -92,6 +101,7 @@ export class AuthService {
           credits: 3, // 新用户赠送3积分
         },
       });
+      this.logger.log(`新微信用户注册: openId=${wechatInfo.openId}`);
     } else {
       // 更新用户信息
       user = await this.prisma.user.update({
@@ -103,6 +113,7 @@ export class AuthService {
           lastLoginAt: new Date(),
         },
       });
+      this.logger.log(`微信用户登录: openId=${wechatInfo.openId}`);
     }
 
     const token = this.generateToken(user);
@@ -118,12 +129,12 @@ export class AuthService {
     });
 
     if (!admin || !admin.isActive) {
-      throw new UnauthorizedException("用户名或密码错误");
+      throw new InvalidCredentialsException("用户名或密码错误");
     }
 
     const isValid = await bcrypt.compare(password, admin.passwordHash);
     if (!isValid) {
-      throw new UnauthorizedException("用户名或密码错误");
+      throw new InvalidCredentialsException("用户名或密码错误");
     }
 
     // 更新最后登录时间
@@ -135,6 +146,7 @@ export class AuthService {
     const token = this.generateAdminToken(admin);
     const { passwordHash, ...adminWithoutPassword } = admin;
 
+    this.logger.log(`管理员登录成功: ${username}`);
     return { token, admin: adminWithoutPassword };
   }
 
@@ -149,7 +161,7 @@ export class AuthService {
     });
 
     if (existingUser && existingUser.id !== userId) {
-      throw new ConflictException("该微信账号已被其他用户绑定");
+      throw new EmailAlreadyExistsException("该微信账号已被其他用户绑定");
     }
 
     const user = await this.prisma.user.update({
@@ -162,6 +174,7 @@ export class AuthService {
     });
 
     const { passwordHash, ...userWithoutPassword } = user;
+    this.logger.log(`用户绑定微信: userId=${userId}`);
     return { user: userWithoutPassword };
   }
 
@@ -186,7 +199,7 @@ export class AuthService {
       throw new UnauthorizedException("用户不存在");
     }
 
-    return { user };
+    return user;
   }
 
   // 获取当前管理员信息
@@ -208,7 +221,7 @@ export class AuthService {
       throw new UnauthorizedException("管理员不存在");
     }
 
-    return { admin };
+    return admin;
   }
 
   private generateToken(user: any) {
