@@ -10,6 +10,7 @@ import {
   Req,
   UseInterceptors,
   UploadedFile,
+  BadRequestException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
@@ -29,12 +30,64 @@ import { CreateGenerationDto } from "./dto/create-generation.dto";
 import { diskStorage } from "multer";
 import { extname } from "path";
 import { v4 as uuidv4 } from "uuid";
+import * as fs from "fs";
+import * as path from "path";
 
 @ApiTags("Generations")
 @ApiBearerAuth("JWT-auth")
 @Controller("generations")
 export class GenerationController {
   constructor(private generationService: GenerationService) {}
+
+  /**
+   * 保存 Base64 图片到文件系统
+   * @param base64Data Base64 编码的图片（支持 data URI 或纯 base64）
+   * @returns 保存后的文件路径
+   */
+  private async saveBase64Image(base64Data: string): Promise<string> {
+    try {
+      // 解析 base64 数据
+      let base64String = base64Data;
+      let mimeType = "image/png"; // 默认
+
+      // 如果是 data URI 格式，提取 MIME 类型和 base64 数据
+      if (base64Data.startsWith("data:")) {
+        const matches = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+        if (!matches) {
+          throw new BadRequestException("无效的 Base64 图片格式");
+        }
+        mimeType = matches[1];
+        base64String = matches[2];
+      }
+
+      // 确定文件扩展名
+      let ext = ".png";
+      if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
+        ext = ".jpg";
+      } else if (mimeType.includes("webp")) {
+        ext = ".webp";
+      }
+
+      // 生成唯一文件名
+      const filename = `${uuidv4()}${ext}`;
+      const uploadDir = path.join(process.cwd(), "uploads", "originals");
+      const filePath = path.join(uploadDir, filename);
+
+      // 确保上传目录存在
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // 将 base64 转换为 Buffer 并保存
+      const buffer = Buffer.from(base64String, "base64");
+      fs.writeFileSync(filePath, buffer);
+
+      // 返回相对路径
+      return `/uploads/originals/${filename}`;
+    } catch (error: any) {
+      throw new BadRequestException(`保存图片失败: ${error.message}`);
+    }
+  }
 
   @Post("test")
   @ApiOperation({
@@ -114,11 +167,74 @@ export class GenerationController {
     );
   }
 
+  @Post("base64")
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: "创建图像生成任务（Base64）",
+    description: "使用 Base64 编码的图片创建生成任务，适合前端直接传输",
+  })
+  @ApiBody({
+    schema: {
+      type: "object",
+      required: ["templateId", "imageBase64"],
+      properties: {
+        templateId: {
+          type: "string",
+          description: "模版ID",
+          example: "cmh4v5z7y00jx2dmofp3x2ars",
+        },
+        imageBase64: {
+          type: "string",
+          description: "Base64 编码的图片（支持 data URI 格式或纯 base64 字符串）",
+          example: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        },
+        generationType: {
+          type: "string",
+          enum: ["TEMPLATE", "ID_PHOTO", "PORTRAIT"],
+          example: "TEMPLATE",
+          description: "可选，默认为 TEMPLATE",
+        },
+        title: {
+          type: "string",
+          example: "我的第一张AI图片",
+          description: "可选，不填写则自动生成",
+        },
+      },
+    },
+  })
+  @ApiSuccessResponse()
+  @ApiResponse({ status: 400, description: "参数错误或积分不足" })
+  @ApiResponse({ status: 404, description: "模板不存在" })
+  async createTaskWithBase64(
+    @Body() body: {
+      templateId: string;
+      imageBase64: string;
+      generationType?: string;
+      title?: string;
+    },
+    @Req() req: any,
+  ) {
+    // 保存 base64 图片到文件
+    const imagePath = await this.saveBase64Image(body.imageBase64);
+
+    const createDto: CreateGenerationDto = {
+      templateId: body.templateId,
+      generationType: body.generationType || "TEMPLATE",
+      title: body.title,
+    };
+
+    return this.generationService.createAndGenerate(
+      req.user.userId,
+      createDto,
+      imagePath,
+    );
+  }
+
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: "创建图像生成任务",
-    description: "上传图片并使用模版生成新图片，一步完成",
+    summary: "创建图像生成任务（文件上传）",
+    description: "上传图片文件并使用模版生成新图片",
   })
   @ApiConsumes("multipart/form-data")
   @ApiBody({

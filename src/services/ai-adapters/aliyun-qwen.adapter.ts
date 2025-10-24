@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   IAIAdapter,
   GenerationParams,
@@ -28,6 +30,50 @@ export class AliyunQwenAdapter implements IAIAdapter {
   }
 
   /**
+   * 将本地图片文件转换为 base64 格式
+   * @param imagePath 图片路径（可以是 URL 或文件系统路径）
+   */
+  private convertImageToBase64(imagePath: string): string {
+    try {
+      // 如果是 HTTP URL，提取路径部分
+      let filePath = imagePath;
+      if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+        const url = new URL(imagePath);
+        filePath = url.pathname; // 例如：/uploads/originals/xxx.png
+      }
+
+      // 移除开头的斜杠，将相对路径转换为绝对路径
+      const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
+      const absolutePath = path.join(process.cwd(), cleanPath);
+
+      this.logger.log(`读取图片文件: ${absolutePath}`);
+
+      // 读取图片文件
+      const imageBuffer = fs.readFileSync(absolutePath);
+
+      // 转换为 base64
+      const base64Image = imageBuffer.toString('base64');
+
+      // 根据文件扩展名确定 MIME 类型
+      const ext = path.extname(absolutePath).toLowerCase();
+      let mimeType = 'image/jpeg';
+      if (ext === '.png') {
+        mimeType = 'image/png';
+      } else if (ext === '.webp') {
+        mimeType = 'image/webp';
+      } else if (ext === '.jpg' || ext === '.jpeg') {
+        mimeType = 'image/jpeg';
+      }
+
+      // 返回 data URI 格式
+      return `data:${mimeType};base64,${base64Image}`;
+    } catch (error: any) {
+      this.logger.error(`图片转换失败: ${error.message}`);
+      throw new Error(`无法读取图片文件: ${imagePath}`);
+    }
+  }
+
+  /**
    * 生成图像
    * @param params 生成参数
    */
@@ -38,9 +84,11 @@ export class AliyunQwenAdapter implements IAIAdapter {
       // 构建请求内容
       const content: any[] = [];
 
-      // 如果有输入图片，先添加图片
+      // 如果有输入图片，先添加图片（转换为 base64）
       if (params.imageUrl) {
-        content.push({ image: params.imageUrl });
+        const base64Image = this.convertImageToBase64(params.imageUrl);
+        content.push({ image: base64Image });
+        this.logger.log(`图片已转换为 base64 格式，长度: ${base64Image.length}`);
       }
 
       // 添加文本提示词
