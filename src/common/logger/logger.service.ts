@@ -16,15 +16,9 @@ export class AppLoggerService implements NestLoggerService {
       level: logLevel,
       formatters: {
         level: (label) => ({ level: label.toUpperCase() }),
-        log: (object) => {
-          // 添加时间戳和上下文格式化
-          if (object.msg && object.context) {
-            object.msg = `[${object.context}] ${object.msg}`;
-            delete object.context;
-          }
-          return object;
-        },
+        // 紧凑模式：移除上下文格式化，让 pino-pretty 处理
       },
+      // 基础时间戳，pino-pretty 会重新格式化
       timestamp: pino.stdTimeFunctions.isoTime,
     };
 
@@ -34,8 +28,13 @@ export class AppLoggerService implements NestLoggerService {
         target: "pino-pretty",
         options: {
           colorize: true,
-          translateTime: "yyyy-mm-dd HH:MM:ss",
-          messageFormat: "{context} {msg}",
+          translateTime: "HH:MM:ss",
+          messageFormat: "[{context}] {msg}",
+          // 紧凑模式配置
+          levelFirst: true,
+          ignore: "pid,hostname,reqId,req.method,req.url,req.headers,req.remoteAddress,req.remotePort",
+          singleLine: true,
+          // 移除 customPrettifiers，因为它会导致 Worker 线程克隆错误
         },
       });
       this.logger = pino(pinoConfig, prettyTransport);
@@ -79,7 +78,8 @@ export class AppLoggerService implements NestLoggerService {
     this.logger.error({
       context: context || this.context,
       msg: message,
-      ...(trace && { error: trace })
+      // 只在开发环境显示详细堆栈，生产环境隐藏
+      ...(trace && process.env.NODE_ENV === 'development' && { error: trace })
     });
   }
 

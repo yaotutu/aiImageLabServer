@@ -91,10 +91,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // 记录错误日志（业务异常不记录为 error 级别）
     if (!(exception instanceof BusinessException)) {
-      this.logger.error(
-        `${request.method} ${request.url} - ${message}`,
-        exception instanceof Error ? exception.stack : undefined,
-      );
+      // 对于认证相关的常见错误，使用 WARN 级别而不是 ERROR 级别
+      if (status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN) {
+        this.logger.warn(
+          `${request.method} ${request.url} - ${message}`,
+        );
+      } else {
+        // 其他错误记录完整的堆栈信息
+        this.logger.error(
+          `${request.method} ${request.url} - ${message}`,
+          exception instanceof Error ? exception.stack : undefined,
+        );
+      }
     } else {
       this.logger.warn(
         `${request.method} ${request.url} - ${message}`,

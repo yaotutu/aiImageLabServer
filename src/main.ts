@@ -106,14 +106,15 @@ async function bootstrap() {
 
   httpAdapter.get("/api-docs", scalarMiddleware);
 
-  // 启动服务
-  await app.listen(port);
+  // 启动服务 - 监听所有网络接口，允许局域网访问
+  await app.listen(port, '0.0.0.0');
 
   const logger = app.get(AppLoggerService);
   logger.log(`服务器已启动`, "Bootstrap");
   logger.log(`运行环境: ${nodeEnv}`, "Bootstrap");
   logger.log(`端口: ${port}`, "Bootstrap");
-  logger.log(`URL: http://localhost:${port}`, "Bootstrap");
+  logger.log(`本地访问: http://localhost:${port}`, "Bootstrap");
+  logger.log(`局域网访问: http://0.0.0.0:${port}`, "Bootstrap");
   logger.log(`API 文档: http://localhost:${port}/api-docs`, "Bootstrap");
   logger.log(`启动时间: ${new Date().toLocaleString()}`, "Bootstrap");
 }
